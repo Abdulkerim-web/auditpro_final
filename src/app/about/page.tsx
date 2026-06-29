@@ -1,7 +1,7 @@
 import PublicNav from '@/components/public/PublicNav'
 import AIChatbot from '@/components/AIChatbot'
 import PublicFooter from '@/components/public/PublicFooter'
-import { CheckCircle2, Award, Users, Clock, Scale } from 'lucide-react'
+import { CircleCheck as CheckCircle2, Award, Users, Clock, Scale } from 'lucide-react'
 import { FIRM, AUDITOR } from '@/lib/data'
 
 export const metadata = { title: 'About' }

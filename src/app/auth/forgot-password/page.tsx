@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import Link from 'next/link'
-import { Scale, Mail, ArrowLeft, CheckCircle2 } from 'lucide-react'
+import { Scale, Mail, ArrowLeft, CircleCheck as CheckCircle2 } from 'lucide-react'
 import { FIRM } from '@/lib/data'
 
 export default function ForgotPasswordPage() {
