@@ -1,50 +1,120 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Users, Briefcase, DollarSign, Clock, TrendingUp, ArrowUpRight, AlertTriangle, CheckCircle2, Calendar } from 'lucide-react'
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts'
+import { Users, Briefcase, DollarSign, Clock, TrendingUp, ArrowUpRight, TriangleAlert as AlertTriangle, Calendar } from 'lucide-react'
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import DashboardHeader from '@/components/dashboard/DashboardHeader'
 import { cn, formatCurrency, formatDate, STATUS_COLORS } from '@/utils'
-import { CLIENTS, ENGAGEMENTS, INVOICES, MESSAGES, TIME_ENTRIES, REVENUE_CHART, NOTIFICATIONS } from '@/lib/data'
+import { REVENUE_CHART } from '@/lib/data'
+import { useAuth } from '@/lib/auth-context'
+import { fetchClients, fetchEngagements, fetchInvoices, fetchTimeEntries, fetchNotifications } from '@/lib/db'
+import type { Client, Engagement, Invoice, TimeEntry, Notification } from '@/lib/supabase'
 
-const ENG_TYPES = [
-  { name: 'Statutory', value: 38, color: '#2563eb' },
-  { name: 'Internal', value: 22, color: '#7c3aed' },
-  { name: 'Tax', value: 18, color: '#d97706' },
-  { name: 'Compliance', value: 12, color: '#059669' },
-  { name: 'Forensic', value: 10, color: '#dc2626' },
+const ENG_TYPE_COLORS: Record<string, string> = {
+  statutory_audit: '#2563eb',
+  internal_audit: '#7c3aed',
+  tax_audit: '#d97706',
+  compliance_review: '#059669',
+  agreed_upon_procedures: '#dc2626',
+  forensic_audit: '#db2777',
+}
+
+const ENG_TYPE_LABELS: Record<string, string> = {
+  statutory_audit: 'Statutory',
+  internal_audit: 'Internal',
+  tax_audit: 'Tax',
+  compliance_review: 'Compliance',
+  agreed_upon_procedures: 'AUP',
+  forensic_audit: 'Forensic',
+}
+
+const tasks = [
+  { text: 'Review Ethio Trading FY2023 trial balance', priority: 'high', due: 'Today', link: '/dashboard/engagements' },
+  { text: 'Sign off Abyssinia Hotels audit report', priority: 'high', due: 'Tomorrow', link: '/dashboard/engagements' },
+  { text: 'Upload Nile Construction engagement letter', priority: 'medium', due: 'Feb 5', link: '/dashboard/engagements' },
+  { text: 'Follow up overdue invoices', priority: 'medium', due: 'Feb 7', link: '/dashboard/billing' },
+  { text: 'Review ERCA filing — compliance due', priority: 'low', due: 'Feb 12', link: '/dashboard/reports' },
 ]
 
 export default function DashboardPage() {
-  const activeClients = CLIENTS.filter(c => c.status === 'active').length
-  const openEngagements = ENGAGEMENTS.filter(e => e.status !== 'completed').length
-  const revenueYTD = INVOICES.filter(i => i.status === 'paid').reduce((s, i) => s + i.total_amount, 0)
-  const billableHours = TIME_ENTRIES.filter(t => t.is_billable).reduce((s, t) => s + t.hours, 0)
-  const overdueInvoices = INVOICES.filter(i => i.status === 'overdue')
-  const unreadMsgs = MESSAGES.filter(m => !m.read && m.sender_role === 'client').length
+  const { profile } = useAuth()
+  const [loading, setLoading] = useState(true)
+  const [clients, setClients] = useState<Client[]>([])
+  const [engagements, setEngagements] = useState<Engagement[]>([])
+  const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([])
+  const [notifications, setNotifications] = useState<Notification[]>([])
+
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        const [c, e, i, t] = await Promise.all([
+          fetchClients(),
+          fetchEngagements(),
+          fetchInvoices(),
+          fetchTimeEntries(),
+        ])
+        if (!mounted) return
+        setClients(c)
+        setEngagements(e)
+        setInvoices(i)
+        setTimeEntries(t)
+        if (profile?.id) {
+          try {
+            const n = await fetchNotifications(profile.id)
+            if (mounted) setNotifications(n)
+          } catch { /* notifications optional */ }
+        }
+      } catch (err) {
+        console.error('Dashboard load failed:', err)
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    })()
+    return () => { mounted = false }
+  }, [profile?.id])
+
+  const activeClients = clients.filter(c => c.status === 'active').length
+  const openEngagements = engagements.filter(e => e.status !== 'completed').length
+  const revenueYTD = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + i.total_amount, 0)
+  const billableHours = timeEntries.filter(t => t.is_billable).reduce((s, t) => s + t.hours, 0)
+  const overdueInvoices = invoices.filter(i => i.status === 'overdue')
+  const unreadNotifs = notifications.filter(n => !n.is_read).length
 
   const stats = [
-    { icon: Users, label: 'Active Clients', value: activeClients, sub: '+2 this quarter', color: '#2563eb', bg: '#eff6ff', href: '/dashboard/clients' },
-    { icon: Briefcase, label: 'Open Engagements', value: openEngagements, sub: '3 due this month', color: '#7c3aed', bg: '#f5f3ff', href: '/dashboard/engagements' },
-    { icon: DollarSign, label: 'Revenue YTD', value: formatCurrency(revenueYTD), sub: '+18% vs last year', color: '#059669', bg: '#ecfdf5', href: '/dashboard/billing' },
-    { icon: Clock, label: 'Billable Hours', value: `${billableHours}h`, sub: '94% utilization', color: '#d97706', bg: '#fffbeb', href: '/dashboard/time' },
+    { icon: Users, label: 'Active Clients', value: activeClients, sub: `${clients.length} total`, color: '#2563eb', bg: '#eff6ff', href: '/dashboard/clients' },
+    { icon: Briefcase, label: 'Open Engagements', value: openEngagements, sub: `${engagements.length} total`, color: '#7c3aed', bg: '#f5f3ff', href: '/dashboard/engagements' },
+    { icon: DollarSign, label: 'Revenue YTD', value: formatCurrency(revenueYTD), sub: `${invoices.filter(i => i.status === 'paid').length} paid`, color: '#059669', bg: '#ecfdf5', href: '/dashboard/billing' },
+    { icon: Clock, label: 'Billable Hours', value: `${billableHours.toFixed(1)}h`, sub: `${timeEntries.length} entries`, color: '#d97706', bg: '#fffbeb', href: '/dashboard/time' },
   ]
 
-  const activeEngs = ENGAGEMENTS.filter(e => e.status !== 'completed').map(e => ({
-    ...e, client: CLIENTS.find(c => c.id === e.client_id)
+  const activeEngs = engagements.filter(e => e.status !== 'completed')
+
+  // Derive engagement mix from real data
+  const typeCounts: Record<string, number> = {}
+  engagements.forEach(e => { typeCounts[e.type] = (typeCounts[e.type] || 0) + 1 })
+  const totalEngs = engagements.length || 1
+  const engMix = Object.entries(typeCounts).map(([type, count]) => ({
+    name: ENG_TYPE_LABELS[type] || type,
+    value: Math.round((count / totalEngs) * 100),
+    color: ENG_TYPE_COLORS[type] || '#64748b',
   }))
 
-  const tasks = [
-    { text: 'Review Ethio Trading FY2023 trial balance', priority: 'high', due: 'Today', link: '/dashboard/engagements/eng-001' },
-    { text: 'Sign off Abyssinia Hotels audit report', priority: 'high', due: 'Tomorrow', link: '/dashboard/engagements/eng-002' },
-    { text: 'Upload Nile Construction engagement letter', priority: 'medium', due: 'Feb 5', link: '/dashboard/engagements/eng-003' },
-    { text: 'Follow up overdue invoice INV-2024-0019', priority: 'medium', due: 'Feb 7', link: '/dashboard/billing' },
-    { text: 'Review ERCA filing — compliance due', priority: 'low', due: 'Feb 12', link: '/dashboard/reports' },
-  ]
+  if (loading) {
+    return (
+      <div className="flex flex-col flex-1">
+        <DashboardHeader title="Dashboard" subtitle="Loading..." />
+        <div className="flex-1 p-6 flex items-center justify-center" style={{ background: 'var(--surface-1)' }}>
+          <div className="w-10 h-10 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" style={{ borderWidth: '3px' }} />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col flex-1">
-      <DashboardHeader title="Dashboard" subtitle={`Good morning, Beyan — ${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}`} />
+      <DashboardHeader title="Dashboard" subtitle={`Welcome back, ${profile?.full_name?.split(' ')[0] || 'Beyan'} — ${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}`} />
 
       <div className="flex-1 p-6 overflow-y-auto" style={{ background: 'var(--surface-1)' }}>
         {/* Alert banner */}
@@ -57,7 +127,7 @@ export default function DashboardPage() {
           </Link>
         )}
 
-        {/* Stat cards with 3D float effect */}
+        {/* Stat cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {stats.map((s, i) => (
             <Link key={s.label} href={s.href}
@@ -116,23 +186,29 @@ export default function DashboardPage() {
           <div className="card p-5 animate-fade-in delay-300">
             <h3 className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Engagement Mix</h3>
             <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>By type — all time</p>
-            <div className="flex justify-center mb-3">
-              <PieChart width={150} height={150}>
-                <Pie data={ENG_TYPES} cx={75} cy={75} innerRadius={45} outerRadius={70} dataKey="value" strokeWidth={0}>
-                  {ENG_TYPES.map((e, i) => <Cell key={i} fill={e.color} />)}
-                </Pie>
-              </PieChart>
-            </div>
-            <div className="flex flex-col gap-2">
-              {ENG_TYPES.map(e => (
-                <div key={e.name} className="flex items-center justify-between text-xs">
-                  <span className="flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
-                    <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: e.color }} />{e.name}
-                  </span>
-                  <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{e.value}%</span>
+            {engMix.length > 0 ? (
+              <>
+                <div className="flex justify-center mb-3">
+                  <PieChart width={150} height={150}>
+                    <Pie data={engMix} cx={75} cy={75} innerRadius={45} outerRadius={70} dataKey="value" strokeWidth={0}>
+                      {engMix.map((e, i) => <Cell key={i} fill={e.color} />)}
+                    </Pie>
+                  </PieChart>
                 </div>
-              ))}
-            </div>
+                <div className="flex flex-col gap-2">
+                  {engMix.map(e => (
+                    <div key={e.name} className="flex items-center justify-between text-xs">
+                      <span className="flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
+                        <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: e.color }} />{e.name}
+                      </span>
+                      <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{e.value}%</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>No engagements yet</p>
+            )}
           </div>
         </div>
 
@@ -144,15 +220,17 @@ export default function DashboardPage() {
               <Link href="/dashboard/engagements" className="text-xs font-semibold hover:underline" style={{ color: 'var(--brand-600)' }}>View all →</Link>
             </div>
             <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
-              {activeEngs.map(eng => (
+              {activeEngs.length === 0 ? (
+                <p className="px-5 py-8 text-sm text-center" style={{ color: 'var(--text-muted)' }}>No active engagements</p>
+              ) : activeEngs.map(eng => (
                 <Link key={eng.id} href={`/dashboard/engagements/${eng.id}`}
                   className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors group">
                   <div className="w-9 h-9 rounded-xl gradient-brand flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                    {eng.client?.company_name[0]}
+                    {(eng.client?.company_name || '?')[0]}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5">
-                      <span className="font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>{eng.client?.company_name}</span>
+                      <span className="font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>{eng.client?.company_name || 'Unknown'}</span>
                       <span className={cn('badge ring-1', STATUS_COLORS[eng.status])}>{eng.status}</span>
                     </div>
                     <div className="text-xs mb-1.5" style={{ color: 'var(--text-muted)' }}>{eng.title} · Due {formatDate(eng.planned_end)}</div>

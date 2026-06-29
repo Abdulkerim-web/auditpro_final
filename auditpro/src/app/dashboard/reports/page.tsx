@@ -1,24 +1,56 @@
 'use client'
-import { FileText, Download, Eye, Clock, CheckCircle2, Edit3, Send } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { FileText, Download, Eye, Clock, CircleCheck as CheckCircle2, CreditCard as Edit3, Send } from 'lucide-react'
 import DashboardHeader from '@/components/dashboard/DashboardHeader'
-import { cn, STATUS_COLORS, formatDate } from '@/utils'
+import { cn, STATUS_COLORS, formatDate, formatFileSize } from '@/utils'
+import { fetchDocuments, fetchEngagements } from '@/lib/db'
+import type { DocumentRow, Engagement } from '@/lib/supabase'
 
-const REPORTS = [
-  { id: '1', title: 'Independent Auditor Report — Ethio Trading PLC FY2023', client: 'Ethio Trading PLC', type: 'Statutory Audit Report', status: 'review', created: '2024-01-25', pages: 24 },
-  { id: '2', title: 'Internal Audit Report — Abyssinia Hotels Q4 2023', client: 'Abyssinia Hotels Group', type: 'Internal Audit Report', status: 'completed', created: '2024-01-20', pages: 38 },
-  { id: '3', title: 'Management Letter — East Africa Development Fund', client: 'East Africa Dev Fund', type: 'Management Letter', status: 'reporting', created: '2024-01-18', pages: 12 },
-  { id: '4', title: 'Forensic Investigation Report — Summit Bank SC', client: 'Summit Bank SC', type: 'Forensic Report', status: 'draft', created: '2024-01-10', pages: 5 },
-  { id: '5', title: 'Tax Compliance Report — Habesha Breweries 2023', client: 'Habesha Breweries', type: 'Tax Report', status: 'completed', created: '2023-12-15', pages: 18 },
-]
+const REPORT_TYPES = ['audit_report', 'management_letter', 'working_paper', 'tax_return']
 
 const statusActions: Record<string, { label: string; icon: typeof Edit3; color: string }> = {
   draft: { label: 'Continue Editing', icon: Edit3, color: 'text-gray-600' },
-  review: { label: 'Submit for Review', icon: Send, color: 'text-blue-600' },
-  reporting: { label: 'Finalise Report', icon: CheckCircle2, color: 'text-amber-600' },
-  completed: { label: 'Download PDF', icon: Download, color: 'text-green-600' },
+  pending: { label: 'Review', icon: Eye, color: 'text-blue-600' },
+  uploaded: { label: 'Submit for Review', icon: Send, color: 'text-blue-600' },
+  reviewed: { label: 'Finalise Report', icon: CheckCircle2, color: 'text-amber-600' },
+  approved: { label: 'Download PDF', icon: Download, color: 'text-green-600' },
 }
 
 export default function ReportsPage() {
+  const [loading, setLoading] = useState(true)
+  const [reports, setReports] = useState<DocumentRow[]>([])
+  const [engagements, setEngagements] = useState<Engagement[]>([])
+
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        const [d, e] = await Promise.all([fetchDocuments(), fetchEngagements()])
+        if (!mounted) return
+        setReports(d.filter(doc => REPORT_TYPES.includes(doc.document_type)))
+        setEngagements(e)
+      } catch (err) {
+        console.error('Reports load failed:', err)
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    })()
+    return () => { mounted = false }
+  }, [])
+
+  const engById = (id?: string) => engagements.find(e => e.id === id)
+
+  if (loading) {
+    return (
+      <div className="flex flex-col flex-1">
+        <DashboardHeader title="Reports" subtitle="Loading..." />
+        <div className="flex-1 p-6 flex items-center justify-center">
+          <div className="w-10 h-10 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" style={{ borderWidth: '3px' }} />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col flex-1">
       <DashboardHeader title="Reports" subtitle="Draft, review and finalise audit reports"
@@ -28,10 +60,10 @@ export default function ReportsPage() {
         {/* Stats */}
         <div className="grid grid-cols-4 gap-4 mb-6">
           {[
-            { label: 'Draft', count: REPORTS.filter(r => r.status === 'draft').length, color: 'text-gray-600', bg: 'bg-gray-50' },
-            { label: 'In Review', count: REPORTS.filter(r => r.status === 'review').length, color: 'text-blue-600', bg: 'bg-blue-50' },
-            { label: 'Reporting', count: REPORTS.filter(r => r.status === 'reporting').length, color: 'text-amber-600', bg: 'bg-amber-50' },
-            { label: 'Completed', count: REPORTS.filter(r => r.status === 'completed').length, color: 'text-green-600', bg: 'bg-green-50' },
+            { label: 'Pending', count: reports.filter(r => r.status === 'pending').length, color: 'text-gray-600', bg: 'bg-gray-50' },
+            { label: 'Uploaded', count: reports.filter(r => r.status === 'uploaded').length, color: 'text-blue-600', bg: 'bg-blue-50' },
+            { label: 'Reviewed', count: reports.filter(r => r.status === 'reviewed').length, color: 'text-amber-600', bg: 'bg-amber-50' },
+            { label: 'Approved', count: reports.filter(r => r.status === 'approved').length, color: 'text-green-600', bg: 'bg-green-50' },
           ].map(s => (
             <div key={s.label} className={cn('card px-5 py-4 flex items-center justify-between', s.bg)}>
               <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{s.label}</span>
@@ -45,43 +77,51 @@ export default function ReportsPage() {
           <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
             <h3 className="font-bold" style={{ color: 'var(--text-primary)' }}>All Reports</h3>
           </div>
-          <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
-            {REPORTS.map(report => {
-              const action = statusActions[report.status]
-              return (
-                <div key={report.id} className="flex items-center gap-5 px-6 py-4 hover:bg-gray-50 transition-colors">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ background: 'var(--brand-50)' }}>
-                    <FileText size={18} style={{ color: 'var(--brand-600)' }} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>{report.title}</h4>
-                    <div className="flex items-center gap-3 mt-0.5">
-                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{report.client}</span>
-                      <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
-                        {report.type}
-                      </span>
-                      <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                        <Clock size={10} /> {formatDate(report.created)} · {report.pages}p
-                      </span>
+          {reports.length === 0 ? (
+            <div className="text-center py-12">
+              <FileText size={40} className="mx-auto mb-3 opacity-20" />
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No reports found</p>
+            </div>
+          ) : (
+            <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+              {reports.map(report => {
+                const action = statusActions[report.status] || statusActions.uploaded
+                const eng = engById(report.engagement_id || '')
+                return (
+                  <div key={report.id} className="flex items-center gap-5 px-6 py-4 hover:bg-gray-50 transition-colors">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ background: 'var(--brand-50)' }}>
+                      <FileText size={18} style={{ color: 'var(--brand-600)' }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>{report.name}</h4>
+                      <div className="flex items-center gap-3 mt-0.5">
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{eng?.client?.company_name || '—'}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                          {report.document_type.replace(/_/g, ' ')}
+                        </span>
+                        <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                          <Clock size={10} /> {formatDate(report.created_at)} · {formatFileSize(report.file_size || 0)}
+                        </span>
+                      </div>
+                    </div>
+                    <span className={cn('badge ring-1', STATUS_COLORS[report.status])}>
+                      {report.status}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button className="p-2 rounded-lg hover:bg-gray-100 transition-colors" title="Preview">
+                        <Eye size={16} style={{ color: 'var(--text-muted)' }} />
+                      </button>
+                      <button className={cn('flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors', action.color)}
+                        style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+                        <action.icon size={13} /> {action.label}
+                      </button>
                     </div>
                   </div>
-                  <span className={cn('badge ring-1', STATUS_COLORS[report.status])}>
-                    {report.status}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <button className="p-2 rounded-lg hover:bg-gray-100 transition-colors" title="Preview">
-                      <Eye size={16} style={{ color: 'var(--text-muted)' }} />
-                    </button>
-                    <button className={cn('flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors', action.color)}
-                      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
-                      <action.icon size={13} /> {action.label}
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

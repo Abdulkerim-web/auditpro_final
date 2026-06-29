@@ -1,9 +1,28 @@
+'use client'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { ArrowRight, Calendar, Tag } from 'lucide-react'
-import { BLOG_POSTS } from '@/lib/data'
+import { fetchBlogPosts } from '@/lib/db'
+import type { BlogPost } from '@/lib/supabase'
 
 export default function BlogPreview() {
-  const posts = BLOG_POSTS.slice(0, 3)
+  const [posts, setPosts] = useState<BlogPost[]>([])
+
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        const p = await fetchBlogPosts()
+        if (mounted) setPosts(p.slice(0, 3))
+      } catch (err) {
+        console.error('Blog preview load failed:', err)
+      }
+    })()
+    return () => { mounted = false }
+  }, [])
+
+  if (posts.length === 0) return null
+
   return (
     <section className="py-24">
       <div className="max-w-7xl mx-auto px-6">
@@ -18,8 +37,10 @@ export default function BlogPreview() {
           {posts.map(post => (
             <Link key={post.slug} href={`/blog/${post.slug}`} className="card card-hover p-6 flex flex-col group">
               <div className="flex items-center gap-2 mb-4">
-                <span className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full" style={{ background: 'var(--brand-50)', color: 'var(--brand-600)' }}><Tag size={9} />{post.tag}</span>
-                <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}><Calendar size={10} />{new Date(post.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                {(post.tags || []).map(tag => (
+                  <span key={tag} className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full" style={{ background: 'var(--brand-50)', color: 'var(--brand-600)' }}><Tag size={9} />{tag}</span>
+                ))}
+                <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}><Calendar size={10} />{new Date(post.published_at || post.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
               </div>
               <h3 className="font-bold text-sm mb-3 leading-snug group-hover:text-blue-600 transition-colors" style={{ color: 'var(--text-primary)' }}>{post.title}</h3>
               <p className="text-sm leading-relaxed flex-1" style={{ color: 'var(--text-secondary)' }}>{post.excerpt}</p>

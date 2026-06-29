@@ -1,25 +1,75 @@
 'use client'
-import { notFound } from 'next/navigation'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Calendar, Clock, DollarSign, CheckCircle2, Circle, FileText, MessageSquare, Download } from 'lucide-react'
+import { ArrowLeft, CircleCheck as CheckCircle2, Circle, FileText, Download } from 'lucide-react'
 import DashboardHeader from '@/components/dashboard/DashboardHeader'
-import { ENGAGEMENTS, CLIENTS, DOCUMENTS, MESSAGES, PBC_REQUESTS } from '@/lib/data'
 import { cn, STATUS_COLORS, ENGAGEMENT_TYPE_LABELS, formatCurrency, formatDate } from '@/utils'
+import { fetchEngagement, fetchMilestones, fetchDocuments, fetchPBCRequests, fetchMessagesByEngagement } from '@/lib/db'
+import type { Engagement, Milestone, DocumentRow, PBCRequest, Message } from '@/lib/supabase'
 
-const STATUS_STEPS = ['planning','fieldwork','review','reporting','completed']
+const STATUS_STEPS = ['planning', 'fieldwork', 'review', 'reporting', 'completed']
 
 export default function EngagementDetailPage({ params }: { params: { id: string } }) {
-  const eng = ENGAGEMENTS.find(e => e.id === params.id)
-  if (!eng) notFound()
-  const client = CLIENTS.find(c => c.id === eng.client_id)
-  const docs = DOCUMENTS.filter(d => d.engagement_id === eng.id)
-  const msgs = MESSAGES.filter(m => m.engagement_id === eng.id)
-  const pbcItems = PBC_REQUESTS.filter(p => p.engagement_id === eng.id)
+  const [loading, setLoading] = useState(true)
+  const [eng, setEng] = useState<Engagement | null>(null)
+  const [milestones, setMilestones] = useState<Milestone[]>([])
+  const [docs, setDocs] = useState<DocumentRow[]>([])
+  const [pbcItems, setPbcItems] = useState<PBCRequest[]>([])
+  const [msgs, setMsgs] = useState<Message[]>([])
+
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        const [e, m, d, p, msg] = await Promise.all([
+          fetchEngagement(params.id),
+          fetchMilestones(params.id),
+          fetchDocuments({ engagementId: params.id }),
+          fetchPBCRequests(params.id),
+          fetchMessagesByEngagement(params.id),
+        ])
+        if (!mounted) return
+        setEng(e)
+        setMilestones(m)
+        setDocs(d)
+        setPbcItems(p)
+        setMsgs(msg)
+      } catch (err) {
+        console.error('Engagement detail load failed:', err)
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    })()
+    return () => { mounted = false }
+  }, [params.id])
+
+  if (loading) {
+    return (
+      <div className="flex flex-col flex-1">
+        <DashboardHeader title="Engagement" subtitle="Loading..." />
+        <div className="flex-1 p-6 flex items-center justify-center" style={{ background: 'var(--surface-1)' }}>
+          <div className="w-10 h-10 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" style={{ borderWidth: '3px' }} />
+        </div>
+      </div>
+    )
+  }
+
+  if (!eng) {
+    return (
+      <div className="flex flex-col flex-1">
+        <DashboardHeader title="Engagement not found" />
+        <div className="flex-1 p-6 flex items-center justify-center" style={{ background: 'var(--surface-1)' }}>
+          <Link href="/dashboard/engagements" className="text-sm" style={{ color: 'var(--brand-600)' }}>Back to Engagements</Link>
+        </div>
+      </div>
+    )
+  }
+
   const currentStep = STATUS_STEPS.indexOf(eng.status)
 
   return (
     <div className="flex flex-col flex-1">
-      <DashboardHeader title={eng.title} subtitle={client?.company_name} />
+      <DashboardHeader title={eng.title} subtitle={eng.client?.company_name} />
       <div className="flex-1 p-6 overflow-y-auto" style={{ background: 'var(--surface-1)' }}>
         <Link href="/dashboard/engagements" className="inline-flex items-center gap-1.5 text-sm mb-5" style={{ color: 'var(--text-muted)' }}>
           <ArrowLeft size={14} />Back to Engagements
@@ -62,13 +112,13 @@ export default function EngagementDetailPage({ params }: { params: { id: string 
               <h3 className="font-bold mb-4 text-sm" style={{ color: 'var(--text-primary)' }}>Engagement Details</h3>
               <div className="flex flex-col gap-3 text-sm">
                 {[
-                  { label: 'Client', value: client?.company_name },
-                  { label: 'Type', value: ENGAGEMENT_TYPE_LABELS[eng.type] },
+                  { label: 'Client', value: eng.client?.company_name || '—' },
+                  { label: 'Type', value: ENGAGEMENT_TYPE_LABELS[eng.type] || eng.type },
                   { label: 'Period', value: `${formatDate(eng.period_start)} – ${formatDate(eng.period_end)}` },
                   { label: 'Planned start', value: formatDate(eng.planned_start) },
                   { label: 'Deadline', value: formatDate(eng.planned_end) },
                   { label: 'Fee', value: formatCurrency(eng.fee_amount || 0) },
-                  { label: 'Hours logged', value: `${eng.billable_hours}h / ${eng.budgeted_hours}h` },
+                  { label: 'Hours logged', value: `${eng.billable_hours}h / ${eng.budgeted_hours || 0}h` },
                 ].map(r => (
                   <div key={r.label} className="flex justify-between gap-2">
                     <span className="flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{r.label}</span>
@@ -81,17 +131,21 @@ export default function EngagementDetailPage({ params }: { params: { id: string 
             {/* Milestones */}
             <div className="card p-5">
               <h3 className="font-bold mb-3 text-sm" style={{ color: 'var(--text-primary)' }}>Milestones</h3>
-              <div className="flex flex-col gap-2">
-                {eng.milestones.map((m, i) => (
-                  <div key={i} className="flex items-start gap-2.5">
-                    {m.done ? <CheckCircle2 size={16} className="text-green-600 flex-shrink-0 mt-0.5" /> : <Circle size={16} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--text-muted)' }} />}
-                    <div>
-                      <p className={cn('text-sm', m.done ? 'line-through' : 'font-medium')} style={{ color: m.done ? 'var(--text-muted)' : 'var(--text-primary)' }}>{m.title}</p>
-                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDate(m.date)}</p>
+              {milestones.length === 0 ? (
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No milestones defined</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {milestones.map(m => (
+                    <div key={m.id} className="flex items-start gap-2.5">
+                      {m.is_completed ? <CheckCircle2 size={16} className="text-green-600 flex-shrink-0 mt-0.5" /> : <Circle size={16} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--text-muted)' }} />}
+                      <div>
+                        <p className={cn('text-sm', m.is_completed && 'line-through')} style={{ color: m.is_completed ? 'var(--text-muted)' : 'var(--text-primary)' }}>{m.title}</p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDate(m.due_date)}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -102,17 +156,17 @@ export default function EngagementDetailPage({ params }: { params: { id: string 
               <div className="card">
                 <div className="px-5 pt-5 pb-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
                   <h3 className="font-bold" style={{ color: 'var(--text-primary)' }}>Document Requests (PBC)</h3>
-                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{pbcItems.filter(p => p.done).length}/{pbcItems.length} completed</span>
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{pbcItems.filter(p => p.is_completed).length}/{pbcItems.length} completed</span>
                 </div>
                 <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
                   {pbcItems.map(item => (
                     <div key={item.id} className="flex items-center gap-4 px-5 py-3.5">
-                      {item.done ? <CheckCircle2 size={17} className="text-green-600 flex-shrink-0" /> : <Circle size={17} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />}
+                      {item.is_completed ? <CheckCircle2 size={17} className="text-green-600 flex-shrink-0" /> : <Circle size={17} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />}
                       <div className="flex-1">
-                        <p className={cn('text-sm', item.done && 'line-through')} style={{ color: item.done ? 'var(--text-muted)' : 'var(--text-primary)' }}>{item.title}</p>
-                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Due: {formatDate(item.due)}</p>
+                        <p className={cn('text-sm', item.is_completed && 'line-through')} style={{ color: item.is_completed ? 'var(--text-muted)' : 'var(--text-primary)' }}>{item.title}</p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Due: {formatDate(item.due_date)}</p>
                       </div>
-                      {item.done && <Download size={14} className="text-gray-400 cursor-pointer hover:text-gray-600" />}
+                      {item.is_completed && <Download size={14} className="text-gray-400 cursor-pointer hover:text-gray-600" />}
                     </div>
                   ))}
                 </div>
@@ -132,7 +186,7 @@ export default function EngagementDetailPage({ params }: { params: { id: string 
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{doc.name}</p>
-                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>By {doc.uploaded_by || 'Pending'} · {doc.created_at ? formatDate(doc.created_at) : 'Not uploaded'}</p>
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>By {doc.uploaded_by || 'Pending'} · {formatDate(doc.created_at)}</p>
                   </div>
                   <span className={cn('badge ring-1', STATUS_COLORS[doc.status])}>{doc.status}</span>
                 </div>
@@ -150,9 +204,9 @@ export default function EngagementDetailPage({ params }: { params: { id: string 
                   {msgs.slice(-3).map(msg => (
                     <div key={msg.id} className="px-5 py-3.5">
                       <div className="flex items-center gap-2 mb-1">
-                        <div className="w-6 h-6 rounded-full gradient-brand flex items-center justify-center text-white text-xs font-bold">{msg.sender[0]}</div>
-                        <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{msg.sender}</span>
-                        {!msg.read && msg.sender_role === 'client' && <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />}
+                        <div className="w-6 h-6 rounded-full gradient-brand flex items-center justify-center text-white text-xs font-bold">{(msg.sender_name || '?')[0]}</div>
+                        <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{msg.sender_name || 'Unknown'}</span>
+                        {!msg.is_read && msg.sender_role === 'client' && <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />}
                       </div>
                       <p className="text-xs leading-relaxed ml-8 line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{msg.content}</p>
                     </div>

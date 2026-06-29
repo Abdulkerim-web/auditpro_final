@@ -3,8 +3,9 @@ import { useState } from 'react'
 import PublicNav from '@/components/public/PublicNav'
 import AIChatbot from '@/components/AIChatbot'
 import PublicFooter from '@/components/public/PublicFooter'
-import { Mail, Phone, MapPin, Clock, CheckCircle2, Send } from 'lucide-react'
+import { Mail, Phone, MapPin, Clock, CircleCheck as CheckCircle2, Send } from 'lucide-react'
 import { FIRM, SERVICES } from '@/lib/data'
+import { submitContactForm } from '@/lib/db'
 
 const services = SERVICES.map(s => s.title)
 
@@ -17,9 +18,21 @@ export default function ContactPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
-    await new Promise(r => setTimeout(r, 900))
-    setSubmitted(true)
-    setLoading(false)
+    try {
+      await submitContactForm({
+        name: form.name,
+        email: form.email,
+        phone: form.phone || undefined,
+        company: form.company || undefined,
+        service_interest: form.service || undefined,
+        message: form.message,
+      })
+      setSubmitted(true)
+    } catch (err) {
+      console.error('Contact form submission failed:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const contacts = [

@@ -1,11 +1,10 @@
 'use client'
-import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Scale, LayoutDashboard, FolderOpen, MessageSquare, Receipt, CheckSquare, LogOut, HelpCircle, User } from 'lucide-react'
-import { cn } from '@/utils'
+import { Scale, LayoutDashboard, FolderOpen, MessageSquare, Receipt, SquareCheck as CheckSquare, LogOut, Circle as HelpCircle, User } from 'lucide-react'
+import { cn, getInitials } from '@/utils'
 import { FIRM } from '@/lib/data'
-import { clearSession, getSessionFromCookies } from '@/lib/auth'
+import { useAuth } from '@/lib/auth-context'
 
 const nav = [
   { icon: LayoutDashboard, label: 'Overview', href: '/client-portal' },
@@ -19,15 +18,13 @@ const nav = [
 export default function ClientPortalSidebar() {
   const pathname = usePathname()
   const router = useRouter()
-  const [user, setUser] = useState<{ name: string; email: string; initials: string } | null>(null)
+  const { profile, signOut } = useAuth()
+  const user = profile
+    ? { name: profile.full_name, email: profile.email, initials: getInitials(profile.full_name) }
+    : null
 
-  useEffect(() => {
-    const { user: u } = getSessionFromCookies()
-    if (u) setUser({ name: u.name, email: u.email, initials: u.initials })
-  }, [])
-
-  const handleLogout = () => {
-    clearSession()
+  const handleLogout = async () => {
+    await signOut()
     router.push('/auth/login')
   }
 

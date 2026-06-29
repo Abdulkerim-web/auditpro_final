@@ -1,8 +1,8 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { ArrowRight, CheckCircle2, Star, Scale, TrendingUp, Shield, Users, Award } from 'lucide-react'
-import { FIRM, CLIENTS, ENGAGEMENTS } from '@/lib/data'
+import { ArrowRight, CircleCheck as CheckCircle2, Star, Scale, TrendingUp, Shield, Users, Award } from 'lucide-react'
+import { FIRM } from '@/lib/data'
 import { cn } from '@/utils'
 
 const trust = ['ICPAE Licensed', 'IFRS Certified', '15+ Years Experience', 'NBE Approved']

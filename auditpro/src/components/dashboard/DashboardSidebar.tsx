@@ -1,15 +1,11 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import {
-  Scale, LayoutDashboard, Users, Briefcase, FolderOpen,
-  MessageSquare, Clock, Receipt, BarChart3, BookOpen,
-  Settings, LogOut, ChevronLeft, ChevronRight, Shield
-} from 'lucide-react'
-import { cn } from '@/utils'
+import { Scale, LayoutDashboard, Users, Briefcase, FolderOpen, MessageSquare, Clock, Receipt, ChartBar as BarChart3, BookOpen, Settings, LogOut, ChevronLeft, ChevronRight, Shield } from 'lucide-react'
+import { cn, getInitials } from '@/utils'
 import { FIRM, AUDITOR } from '@/lib/data'
-import { clearSession, getSessionFromCookies } from '@/lib/auth'
+import { useAuth } from '@/lib/auth-context'
 
 const auditorNav = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
@@ -27,16 +23,13 @@ export default function DashboardSidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const [collapsed, setCollapsed] = useState(false)
-  const [user, setUser] = useState<{ name: string; email: string; initials: string } | null>(null)
+  const { profile, signOut } = useAuth()
+  const user = profile
+    ? { name: profile.full_name, email: profile.email, initials: getInitials(profile.full_name) }
+    : { name: AUDITOR.name, email: AUDITOR.email, initials: AUDITOR.initials }
 
-  useEffect(() => {
-    const { user: u } = getSessionFromCookies()
-    if (u) setUser({ name: u.name, email: u.email, initials: u.initials })
-    else setUser({ name: AUDITOR.name, email: AUDITOR.email, initials: AUDITOR.initials })
-  }, [])
-
-  const handleLogout = () => {
-    clearSession()
+  const handleLogout = async () => {
+    await signOut()
     router.push('/auth/login')
   }
 

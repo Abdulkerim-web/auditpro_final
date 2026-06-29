@@ -1,16 +1,10 @@
 'use client'
-import { useState } from 'react'
-import { Search, Plus, Download, Send, CheckCircle, AlertCircle, Clock, XCircle } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Download, Send, CircleCheck as CheckCircle, CircleAlert as AlertCircle, Clock, Circle as XCircle } from 'lucide-react'
 import DashboardHeader from '@/components/dashboard/DashboardHeader'
 import { cn, STATUS_COLORS, formatCurrency, formatDate } from '@/utils'
-
-const DEMO_INVOICES = [
-  { id: '1', invoice_number: 'INV-2024-0021', client: 'Ethio Trading PLC', amount: 45000, tax_amount: 6750, total_amount: 51750, currency: 'ETB', status: 'sent', issue_date: '2024-01-20', due_date: '2024-02-20', engagement: 'Statutory Audit FY2023' },
-  { id: '2', invoice_number: 'INV-2024-0020', client: 'Abyssinia Hotels Group', amount: 38000, tax_amount: 5700, total_amount: 43700, currency: 'ETB', status: 'paid', issue_date: '2024-01-10', due_date: '2024-02-10', paid_date: '2024-01-28', engagement: 'Internal Audit Q4' },
-  { id: '3', invoice_number: 'INV-2024-0019', client: 'East Africa Dev Fund', amount: 32000, tax_amount: 4800, total_amount: 36800, currency: 'ETB', status: 'overdue', issue_date: '2023-12-15', due_date: '2024-01-15', engagement: 'Compliance Review' },
-  { id: '4', invoice_number: 'INV-2024-0018', client: 'Nile Construction Ltd', amount: 28000, tax_amount: 4200, total_amount: 32200, currency: 'ETB', status: 'draft', issue_date: '2024-01-25', due_date: '2024-02-25', engagement: 'Tax Audit 2023' },
-  { id: '5', invoice_number: 'INV-2023-0017', client: 'Habesha Breweries', amount: 55000, tax_amount: 8250, total_amount: 63250, currency: 'ETB', status: 'paid', issue_date: '2023-12-01', due_date: '2023-12-31', paid_date: '2023-12-29', engagement: 'Statutory Audit FY2023' },
-]
+import { fetchInvoices } from '@/lib/db'
+import type { Invoice } from '@/lib/supabase'
 
 const statusIcons: Record<string, React.ReactNode> = {
   paid: <CheckCircle size={14} className="text-emerald-600" />,
@@ -22,12 +16,40 @@ const statusIcons: Record<string, React.ReactNode> = {
 
 export default function BillingPage() {
   const [filter, setFilter] = useState('all')
+  const [loading, setLoading] = useState(true)
+  const [invoices, setInvoices] = useState<Invoice[]>([])
 
-  const filtered = filter === 'all' ? DEMO_INVOICES : DEMO_INVOICES.filter(i => i.status === filter)
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        const i = await fetchInvoices()
+        if (mounted) setInvoices(i)
+      } catch (err) {
+        console.error('Invoices load failed:', err)
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    })()
+    return () => { mounted = false }
+  }, [])
 
-  const totalPaid = DEMO_INVOICES.filter(i => i.status === 'paid').reduce((s, i) => s + i.total_amount, 0)
-  const totalPending = DEMO_INVOICES.filter(i => i.status === 'sent').reduce((s, i) => s + i.total_amount, 0)
-  const totalOverdue = DEMO_INVOICES.filter(i => i.status === 'overdue').reduce((s, i) => s + i.total_amount, 0)
+  const filtered = filter === 'all' ? invoices : invoices.filter(i => i.status === filter)
+
+  const totalPaid = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + i.total_amount, 0)
+  const totalPending = invoices.filter(i => i.status === 'sent').reduce((s, i) => s + i.total_amount, 0)
+  const totalOverdue = invoices.filter(i => i.status === 'overdue').reduce((s, i) => s + i.total_amount, 0)
+
+  if (loading) {
+    return (
+      <div className="flex flex-col flex-1">
+        <DashboardHeader title="Billing & Invoices" subtitle="Loading..." />
+        <div className="flex-1 p-6 flex items-center justify-center">
+          <div className="w-10 h-10 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" style={{ borderWidth: '3px' }} />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col flex-1">
@@ -74,7 +96,7 @@ export default function BillingPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((inv, i) => (
+              {filtered.map(inv => (
                 <tr key={inv.id} className="border-b last:border-0 hover:bg-gray-50 transition-colors"
                   style={{ borderColor: 'var(--border)' }}>
                   <td className="px-4 py-3.5">
@@ -83,10 +105,10 @@ export default function BillingPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3.5">
-                    <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{inv.client}</span>
+                    <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{inv.client?.company_name || '—'}</span>
                   </td>
                   <td className="px-4 py-3.5">
-                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{inv.engagement}</span>
+                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{inv.engagement?.title || '—'}</span>
                   </td>
                   <td className="px-4 py-3.5">
                     <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -121,6 +143,11 @@ export default function BillingPage() {
               ))}
             </tbody>
           </table>
+          {filtered.length === 0 && (
+            <div className="text-center py-12">
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No invoices found</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,33 +1,61 @@
 'use client'
-import { useState } from 'react'
-import { Search, Upload, FileText, FileSpreadsheet, Image, File, Download, Eye, Trash2, Filter } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Search, Upload, FileText, FileSpreadsheet, Image as ImageIcon, File, Download, Eye, Trash2 } from 'lucide-react'
 import DashboardHeader from '@/components/dashboard/DashboardHeader'
 import { cn, STATUS_COLORS, formatDate, formatFileSize } from '@/utils'
-
-const DOCS = [
-  { id: '1', name: 'Bank Statements Jan–Dec 2023.pdf', client: 'Ethio Trading PLC', engagement: 'Statutory Audit FY2023', document_type: 'bank_statement', status: 'approved', file_size: 2400000, file_type: 'pdf', created_at: '2024-01-20' },
-  { id: '2', name: 'Trial Balance 31 Dec 2023.xlsx', client: 'Ethio Trading PLC', engagement: 'Statutory Audit FY2023', document_type: 'financial_statement', status: 'reviewed', file_size: 580000, file_type: 'xlsx', created_at: '2024-01-22' },
-  { id: '3', name: 'Fixed Asset Register 2023.xlsx', client: 'Ethio Trading PLC', engagement: 'Statutory Audit FY2023', document_type: 'pbc_document', status: 'pending', file_size: 920000, file_type: 'xlsx', created_at: '2024-01-28' },
-  { id: '4', name: 'Internal Controls Assessment Q4.pdf', client: 'Abyssinia Hotels Group', engagement: 'Internal Audit Q4', document_type: 'working_paper', status: 'uploaded', file_size: 1800000, file_type: 'pdf', created_at: '2024-01-18' },
-  { id: '5', name: 'VAT Returns 2023 All Quarters.pdf', client: 'Nile Construction Ltd', engagement: 'Tax Compliance', document_type: 'tax_return', status: 'uploaded', file_size: 3200000, file_type: 'pdf', created_at: '2024-01-27' },
-  { id: '6', name: 'Audit Report Draft v2.pdf', client: 'East Africa Dev Fund', engagement: 'Compliance Review', document_type: 'audit_report', status: 'approved', file_size: 1100000, file_type: 'pdf', created_at: '2024-01-24' },
-]
+import { fetchDocuments, fetchEngagements } from '@/lib/db'
+import type { DocumentRow, Engagement } from '@/lib/supabase'
 
 const fileIcons: Record<string, React.ReactNode> = {
   pdf: <FileText size={18} className="text-red-500" />,
   xlsx: <FileSpreadsheet size={18} className="text-green-600" />,
-  image: <Image size={18} className="text-blue-500" />,
+  image: <ImageIcon size={18} className="text-blue-500" />,
 }
 
 export default function DocumentsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [loading, setLoading] = useState(true)
+  const [docs, setDocs] = useState<DocumentRow[]>([])
+  const [engagements, setEngagements] = useState<Engagement[]>([])
 
-  const filtered = DOCS.filter(d => {
-    const matchSearch = d.name.toLowerCase().includes(search.toLowerCase()) || d.client.toLowerCase().includes(search.toLowerCase())
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        const [d, e] = await Promise.all([fetchDocuments(), fetchEngagements()])
+        if (!mounted) return
+        setDocs(d)
+        setEngagements(e)
+      } catch (err) {
+        console.error('Documents load failed:', err)
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    })()
+    return () => { mounted = false }
+  }, [])
+
+  const engById = (id: string) => engagements.find(e => e.id === id)
+  const filtered = docs.filter(d => {
+    const s = search.toLowerCase()
+    const eng = engById(d.engagement_id || '')
+    const clientName = eng?.client?.company_name || ''
+    const matchSearch = d.name.toLowerCase().includes(s) || clientName.toLowerCase().includes(s)
     const matchStatus = statusFilter === 'all' || d.status === statusFilter
     return matchSearch && matchStatus
   })
+
+  if (loading) {
+    return (
+      <div className="flex flex-col flex-1">
+        <DashboardHeader title="Documents" subtitle="Loading..." />
+        <div className="flex-1 p-6 flex items-center justify-center">
+          <div className="w-10 h-10 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" style={{ borderWidth: '3px' }} />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col flex-1">
@@ -64,44 +92,47 @@ export default function DocumentsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(doc => (
-                <tr key={doc.id} className="border-b last:border-0 hover:bg-gray-50 transition-colors" style={{ borderColor: 'var(--border)' }}>
-                  <td className="px-4 py-3.5">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                        style={{ background: 'var(--surface-2)' }}>
-                        {fileIcons[doc.file_type] || <File size={18} style={{ color: 'var(--text-muted)' }} />}
+              {filtered.map(doc => {
+                const eng = engById(doc.engagement_id || '')
+                return (
+                  <tr key={doc.id} className="border-b last:border-0 hover:bg-gray-50 transition-colors" style={{ borderColor: 'var(--border)' }}>
+                    <td className="px-4 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                          style={{ background: 'var(--surface-2)' }}>
+                          {fileIcons[doc.file_type || ''] || <File size={18} style={{ color: 'var(--text-muted)' }} />}
+                        </div>
+                        <span className="text-sm font-medium truncate max-w-[200px]" style={{ color: 'var(--text-primary)' }}>
+                          {doc.name}
+                        </span>
                       </div>
-                      <span className="text-sm font-medium truncate max-w-[200px]" style={{ color: 'var(--text-primary)' }}>
-                        {doc.name}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3.5">
-                    <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{doc.client}</div>
-                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{doc.engagement}</div>
-                  </td>
-                  <td className="px-4 py-3.5 text-xs capitalize" style={{ color: 'var(--text-secondary)' }}>
-                    {doc.document_type.replace(/_/g, ' ')}
-                  </td>
-                  <td className="px-4 py-3.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-                    {formatFileSize(doc.file_size)}
-                  </td>
-                  <td className="px-4 py-3.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-                    {formatDate(doc.created_at)}
-                  </td>
-                  <td className="px-4 py-3.5">
-                    <span className={cn('badge ring-1', STATUS_COLORS[doc.status])}>{doc.status}</span>
-                  </td>
-                  <td className="px-4 py-3.5">
-                    <div className="flex items-center gap-1">
-                      <button className="p-1.5 rounded hover:bg-gray-100 transition-colors"><Eye size={14} style={{ color: 'var(--text-muted)' }} /></button>
-                      <button className="p-1.5 rounded hover:bg-gray-100 transition-colors"><Download size={14} style={{ color: 'var(--text-muted)' }} /></button>
-                      <button className="p-1.5 rounded hover:bg-red-50 transition-colors"><Trash2 size={14} className="text-red-400" /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{eng?.client?.company_name || '—'}</div>
+                      <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{eng?.title || ''}</div>
+                    </td>
+                    <td className="px-4 py-3.5 text-xs capitalize" style={{ color: 'var(--text-secondary)' }}>
+                      {doc.document_type.replace(/_/g, ' ')}
+                    </td>
+                    <td className="px-4 py-3.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                      {formatFileSize(doc.file_size || 0)}
+                    </td>
+                    <td className="px-4 py-3.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                      {formatDate(doc.created_at)}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <span className={cn('badge ring-1', STATUS_COLORS[doc.status])}>{doc.status}</span>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <div className="flex items-center gap-1">
+                        <button className="p-1.5 rounded hover:bg-gray-100 transition-colors"><Eye size={14} style={{ color: 'var(--text-muted)' }} /></button>
+                        <button className="p-1.5 rounded hover:bg-gray-100 transition-colors"><Download size={14} style={{ color: 'var(--text-muted)' }} /></button>
+                        <button className="p-1.5 rounded hover:bg-red-50 transition-colors"><Trash2 size={14} className="text-red-400" /></button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
           {filtered.length === 0 && (

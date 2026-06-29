@@ -1,14 +1,47 @@
 'use client'
-import { useState } from 'react'
-import { Upload, FileText, FileSpreadsheet, Download, Eye, CheckCircle2 } from 'lucide-react'
-import { DOCUMENTS } from '@/lib/data'
+import { useState, useEffect } from 'react'
+import { Upload, FileText, FileSpreadsheet, Download, Eye } from 'lucide-react'
 import { cn, STATUS_COLORS, formatDate, formatFileSize } from '@/utils'
+import { useAuth } from '@/lib/auth-context'
+import { fetchClientByProfileId, fetchDocuments } from '@/lib/db'
+import type { DocumentRow } from '@/lib/supabase'
 import DashboardHeader from '@/components/dashboard/DashboardHeader'
 
 export default function ClientDocumentsPage() {
+  const { profile } = useAuth()
+  const [loading, setLoading] = useState(true)
   const [dragOver, setDragOver] = useState(false)
-  const docs = DOCUMENTS.filter(d => d.client_id === 'cli-001')
-  const fileIcons: Record<string,any> = { pdf: FileText, xlsx: FileSpreadsheet }
+  const [docs, setDocs] = useState<DocumentRow[]>([])
+  const fileIcons: Record<string, any> = { pdf: FileText, xlsx: FileSpreadsheet }
+
+  useEffect(() => {
+    let mounted = true
+    if (!profile?.id) return
+    ;(async () => {
+      try {
+        const c = await fetchClientByProfileId(profile.id)
+        if (!c) { setLoading(false); return }
+        const d = await fetchDocuments({ clientId: c.id })
+        if (mounted) setDocs(d)
+      } catch (err) {
+        console.error('Client documents load failed:', err)
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    })()
+    return () => { mounted = false }
+  }, [profile?.id])
+
+  if (loading) {
+    return (
+      <div className="flex flex-col flex-1">
+        <DashboardHeader title="My Documents" subtitle="Loading..." />
+        <div className="flex-1 p-6 flex items-center justify-center" style={{ background: 'var(--surface-1)' }}>
+          <div className="w-10 h-10 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" style={{ borderWidth: '3px' }} />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col flex-1">
@@ -27,27 +60,31 @@ export default function ClientDocumentsPage() {
           <div className="px-5 py-3.5 border-b font-bold text-sm" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--text-primary)' }}>
             Documents ({docs.length})
           </div>
-          <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
-            {docs.map(doc => {
-              const Icon = fileIcons[doc.file_type] || FileText
-              return (
-                <div key={doc.id} className="flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)' }}>
-                    <Icon size={18} style={{ color: doc.file_type === 'pdf' ? '#ef4444' : '#059669' }} />
+          {docs.length === 0 ? (
+            <div className="px-5 py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No documents yet</div>
+          ) : (
+            <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+              {docs.map(doc => {
+                const Icon = fileIcons[doc.file_type] || FileText
+                return (
+                  <div key={doc.id} className="flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)' }}>
+                      <Icon size={18} style={{ color: doc.file_type === 'pdf' ? '#ef4444' : '#059669' }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{doc.name}</p>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatFileSize(doc.file_size || 0)} · {formatDate(doc.created_at)}</p>
+                    </div>
+                    <span className={cn('badge ring-1', STATUS_COLORS[doc.status])}>{doc.status}</span>
+                    <div className="flex gap-1">
+                      <button className="p-2 rounded-lg hover:bg-gray-100"><Eye size={14} style={{ color: 'var(--text-muted)' }} /></button>
+                      {doc.status !== 'pending' && <button className="p-2 rounded-lg hover:bg-gray-100"><Download size={14} style={{ color: 'var(--text-muted)' }} /></button>}
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{doc.name}</p>
-                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatFileSize(doc.file_size)} · {doc.created_at ? formatDate(doc.created_at) : 'Pending upload'}</p>
-                  </div>
-                  <span className={cn('badge ring-1', STATUS_COLORS[doc.status])}>{doc.status}</span>
-                  <div className="flex gap-1">
-                    <button className="p-2 rounded-lg hover:bg-gray-100"><Eye size={14} style={{ color: 'var(--text-muted)' }} /></button>
-                    {doc.status !== 'pending' && <button className="p-2 rounded-lg hover:bg-gray-100"><Download size={14} style={{ color: 'var(--text-muted)' }} /></button>}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

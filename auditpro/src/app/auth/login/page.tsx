@@ -2,9 +2,10 @@
 import { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Scale, Eye, EyeOff, Lock, Mail, AlertCircle, Shield, CheckCircle } from 'lucide-react'
+import { Scale, Eye, EyeOff, Lock, Mail, CircleAlert as AlertCircle, Shield, CircleCheck as CheckCircle } from 'lucide-react'
 import { FIRM } from '@/lib/data'
-import { DEMO_USERS, setSession } from '@/lib/auth'
+import { supabase } from '@/lib/supabase'
+import { fetchProfile } from '@/lib/db'
 import { cn } from '@/utils'
 
 const DEMO_CREDS = [
@@ -25,15 +26,23 @@ function LoginForm() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true); setError('')
-    await new Promise(r => setTimeout(r, 600))
-    const user = DEMO_USERS[email.toLowerCase()]
-    if (!user || user.password !== password) {
+    const { data, error: signInError } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    })
+    if (signInError || !data.user) {
       setError('Invalid email or password. Try a demo account below.')
       setLoading(false); return
     }
-    setSession(user)
-    const dest = redirect || (user.role === 'client' ? '/client-portal' : '/dashboard')
-    router.push(dest)
+    // Fetch profile to determine role-based redirect
+    try {
+      const profile = await fetchProfile(data.user.id)
+      const role = profile?.role || 'client'
+      const dest = redirect || (role === 'client' ? '/client-portal' : '/dashboard')
+      router.push(dest)
+    } catch {
+      router.push(redirect || '/dashboard')
+    }
   }
 
   const fillDemo = (email: string, pw: string) => { setEmail(email); setPassword(pw); setError('') }

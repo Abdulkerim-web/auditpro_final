@@ -1,25 +1,72 @@
 'use client'
-import { notFound } from 'next/navigation'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Phone, Mail, Building2, Calendar, Tag, FileText, Briefcase, Receipt, MessageSquare, Edit3 } from 'lucide-react'
+import { ArrowLeft, Phone, Mail, Building2, Calendar, FileText, Receipt, MessageSquare } from 'lucide-react'
 import DashboardHeader from '@/components/dashboard/DashboardHeader'
-import { CLIENTS, ENGAGEMENTS, INVOICES, DOCUMENTS } from '@/lib/data'
 import { cn, STATUS_COLORS, INDUSTRY_LABELS, ENGAGEMENT_TYPE_LABELS, formatCurrency, formatDate } from '@/utils'
+import { fetchClient, fetchEngagements, fetchInvoices, fetchDocuments } from '@/lib/db'
+import type { Client, Engagement, Invoice, DocumentRow } from '@/lib/supabase'
 
 export default function ClientDetailPage({ params }: { params: { id: string } }) {
-  const client = CLIENTS.find(c => c.id === params.id)
-  if (!client) notFound()
+  const [loading, setLoading] = useState(true)
+  const [client, setClient] = useState<Client | null>(null)
+  const [engagements, setEngagements] = useState<Engagement[]>([])
+  const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [documents, setDocuments] = useState<DocumentRow[]>([])
 
-  const engagements = ENGAGEMENTS.filter(e => e.client_id === client.id)
-  const invoices = INVOICES.filter(i => i.client_id === client.id)
-  const documents = DOCUMENTS.filter(d => d.client_id === client.id)
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        const [c, e, i, d] = await Promise.all([
+          fetchClient(params.id),
+          fetchEngagements({ clientId: params.id }),
+          fetchInvoices({ clientId: params.id }),
+          fetchDocuments({ clientId: params.id }),
+        ])
+        if (!mounted) return
+        setClient(c)
+        setEngagements(e)
+        setInvoices(i)
+        setDocuments(d)
+      } catch (err) {
+        console.error('Client detail load failed:', err)
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    })()
+    return () => { mounted = false }
+  }, [params.id])
+
+  if (loading) {
+    return (
+      <div className="flex flex-col flex-1">
+        <DashboardHeader title="Client" subtitle="Loading..." />
+        <div className="flex-1 p-6 flex items-center justify-center" style={{ background: 'var(--surface-1)' }}>
+          <div className="w-10 h-10 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" style={{ borderWidth: '3px' }} />
+        </div>
+      </div>
+    )
+  }
+
+  if (!client) {
+    return (
+      <div className="flex flex-col flex-1">
+        <DashboardHeader title="Client not found" />
+        <div className="flex-1 p-6 flex items-center justify-center" style={{ background: 'var(--surface-1)' }}>
+          <Link href="/dashboard/clients" className="text-sm" style={{ color: 'var(--brand-600)' }}>Back to Clients</Link>
+        </div>
+      </div>
+    )
+  }
+
   const totalRevenue = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + i.total_amount, 0)
 
   return (
     <div className="flex flex-col flex-1">
       <DashboardHeader
         title={client.company_name}
-        subtitle={`${INDUSTRY_LABELS[client.industry]} · ${client.city}`}
+        subtitle={`${INDUSTRY_LABELS[client.industry] || client.industry} · ${client.city || '—'}`}
         action={{ label: 'Edit Client', onClick: () => {} }}
       />
       <div className="flex-1 p-6 overflow-y-auto" style={{ background: 'var(--surface-1)' }}>
@@ -41,10 +88,10 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
               </div>
               <div className="flex flex-col gap-2.5">
                 {[
-                  { icon: Mail, val: client.primary_contact_email, href: `mailto:${client.primary_contact_email}` },
-                  { icon: Phone, val: client.primary_contact_phone, href: `tel:${client.primary_contact_phone?.replace(/\s/g,'')}` },
-                  { icon: Building2, val: `${client.city}, ${client.country}` },
-                  { icon: Calendar, val: `FY end: ${client.fiscal_year_end ? formatDate(client.fiscal_year_end) : 'N/A'}` },
+                  { icon: Mail, val: client.primary_contact_email, href: client.primary_contact_email ? `mailto:${client.primary_contact_email}` : undefined },
+                  { icon: Phone, val: client.primary_contact_phone, href: client.primary_contact_phone ? `tel:${client.primary_contact_phone.replace(/\s/g, '')}` : undefined },
+                  { icon: Building2, val: client.city ? `${client.city}, ${client.country}` : null },
+                  { icon: Calendar, val: client.fiscal_year_end ? `FY end: ${formatDate(client.fiscal_year_end)}` : null },
                 ].map((r, i) => r.val ? (
                   <div key={i} className="flex items-center gap-2.5 text-sm">
                     <r.icon size={14} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
@@ -108,7 +155,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                       <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>{eng.title}</span>
                       <span className={cn('badge ring-1', STATUS_COLORS[eng.status])}>{eng.status}</span>
                     </div>
-                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{ENGAGEMENT_TYPE_LABELS[eng.type]} · {formatDate(eng.planned_start)} – {formatDate(eng.planned_end)}</div>
+                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{ENGAGEMENT_TYPE_LABELS[eng.type] || eng.type} · {formatDate(eng.planned_start)} – {formatDate(eng.planned_end)}</div>
                     <div className="mt-2 w-full h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
                       <div className="h-full rounded-full" style={{ width: `${eng.progress}%`, background: eng.progress === 100 ? '#10b981' : '#2563eb' }} />
                     </div>

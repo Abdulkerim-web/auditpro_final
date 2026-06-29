@@ -1,37 +1,76 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { CheckCircle2, Upload, Bell, AlertCircle, ArrowRight, Download, MessageSquare, FileText, CreditCard, TrendingUp } from 'lucide-react'
+import { CircleCheck as CheckCircle2, Upload, Bell, CircleAlert as AlertCircle, ArrowRight, Download, MessageSquare, FileText, CreditCard, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
 import { cn, formatDate, formatCurrency } from '@/utils'
-import { ENGAGEMENTS, CLIENTS, PBC_REQUESTS, MESSAGES, INVOICES } from '@/lib/data'
-import { getSessionFromCookies } from '@/lib/auth'
+import { useAuth } from '@/lib/auth-context'
+import { fetchClientByProfileId, fetchEngagements, fetchPBCRequests, fetchMessages, fetchInvoices } from '@/lib/db'
+import type { Client, Engagement, PBCRequest, Message, Invoice } from '@/lib/supabase'
 import DashboardHeader from '@/components/dashboard/DashboardHeader'
 
 const STATUS_STEPS = ['planning', 'fieldwork', 'review', 'reporting', 'completed']
 
 export default function ClientPortalPage() {
-  const [userName, setUserName] = useState('Abebe')
-  const [notifOpen, setNotifOpen] = useState(false)
+  const { profile } = useAuth()
+  const [loading, setLoading] = useState(true)
+  const [client, setClient] = useState<Client | null>(null)
+  const [engagements, setEngagements] = useState<Engagement[]>([])
+  const [pbcItems, setPbcItems] = useState<PBCRequest[]>([])
+  const [msgs, setMsgs] = useState<Message[]>([])
+  const [invoices, setInvoices] = useState<Invoice[]>([])
 
   useEffect(() => {
-    const { user } = getSessionFromCookies()
-    if (user) setUserName(user.name.split(' ')[0])
-  }, [])
+    let mounted = true
+    if (!profile?.id) return
+    ;(async () => {
+      try {
+        const c = await fetchClientByProfileId(profile.id)
+        if (!c) { setLoading(false); return }
+        const [e, i] = await Promise.all([
+          fetchEngagements({ clientId: c.id }),
+          fetchInvoices({ clientId: c.id }),
+        ])
+        if (!mounted) return
+        setClient(c)
+        setEngagements(e)
+        setInvoices(i)
+        // Fetch PBC items from the first engagement
+        if (e.length > 0) {
+          const pbc = await fetchPBCRequests(e[0].id)
+          if (mounted) setPbcItems(pbc)
+        }
+        const m = await fetchMessages(c.id)
+        if (mounted) setMsgs(m)
+      } catch (err) {
+        console.error('Client portal load failed:', err)
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    })()
+    return () => { mounted = false }
+  }, [profile?.id])
 
-  // Simulated client data
-  const client = CLIENTS[0]
-  const engagement = { ...ENGAGEMENTS[0], client: CLIENTS[0] }
-  const pbcItems = PBC_REQUESTS.filter(p => p.engagement_id === 'eng-001')
-  const msgs = MESSAGES.filter(m => m.client_id === 'cli-001')
-  const invoices = INVOICES.filter(i => i.client_id === 'cli-001')
-  const unreadMsgs = msgs.filter(m => !m.read && m.sender_role === 'auditor').length
+  const userName = profile?.full_name?.split(' ')[0] || 'Client'
+  const engagement = engagements[0]
+  const unreadMsgs = msgs.filter(m => !m.is_read && m.sender_role === 'auditor').length
   const pendingInvoice = invoices.find(i => i.status === 'sent' || i.status === 'overdue')
-  const pbcDone = pbcItems.filter(p => p.done).length
-  const pbcPct = Math.round((pbcDone / pbcItems.length) * 100)
-  const currentStep = STATUS_STEPS.indexOf(engagement.status)
+  const pbcDone = pbcItems.filter(p => p.is_completed).length
+  const pbcPct = pbcItems.length > 0 ? Math.round((pbcDone / pbcItems.length) * 100) : 0
+  const currentStep = engagement ? STATUS_STEPS.indexOf(engagement.status) : -1
 
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+
+  if (loading) {
+    return (
+      <div className="flex flex-col flex-1">
+        <DashboardHeader title="Client Portal" subtitle="Loading..." />
+        <div className="flex-1 p-6 flex items-center justify-center" style={{ background: 'var(--surface-1)' }}>
+          <div className="w-10 h-10 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" style={{ borderWidth: '3px' }} />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col flex-1">
@@ -40,7 +79,7 @@ export default function ClientPortalPage() {
         style={{ borderColor: 'var(--border)' }}>
         <div>
           <h1 className="font-extrabold text-lg leading-tight" style={{ color: 'var(--text-primary)' }}>
-            {greeting}, {userName} 👋
+            {greeting}, {userName}
           </h1>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
             {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
@@ -79,70 +118,74 @@ export default function ClientPortalPage() {
         )}
 
         {/* Audit stage tracker */}
-        <div className="card p-6 mb-5 animate-fade-in relative overflow-hidden">
-          <div className="absolute right-0 top-0 w-64 h-full opacity-5 gradient-brand" style={{ borderRadius: '50% 0 0 50%' }} />
-          <div className="relative z-10">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="font-extrabold text-base" style={{ color: 'var(--text-primary)' }}>{engagement.title}</h2>
-                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  Period: {formatDate(engagement.period_start)} – {formatDate(engagement.period_end)}
-                </p>
+        {engagement && (
+          <div className="card p-6 mb-5 animate-fade-in relative overflow-hidden">
+            <div className="absolute right-0 top-0 w-64 h-full opacity-5 gradient-brand" style={{ borderRadius: '50% 0 0 50%' }} />
+            <div className="relative z-10">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="font-extrabold text-base" style={{ color: 'var(--text-primary)' }}>{engagement.title}</h2>
+                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    Period: {formatDate(engagement.period_start)} – {formatDate(engagement.period_end)}
+                  </p>
+                </div>
+                <span className="badge ring-1 bg-violet-50 text-violet-700 ring-violet-600/20 capitalize">
+                  {engagement.status}
+                </span>
               </div>
-              <span className="badge ring-1 bg-violet-50 text-violet-700 ring-violet-600/20 capitalize">
-                {engagement.status}
-              </span>
-            </div>
 
-            {/* Stage steps */}
-            <div className="flex items-center gap-0 mb-5 overflow-x-auto">
-              {STATUS_STEPS.map((step, i) => {
-                const done = i < currentStep
-                const active = i === currentStep
-                return (
-                  <div key={step} className="flex items-center flex-shrink-0">
-                    <div className="flex flex-col items-center gap-1">
-                      <div className={cn(
-                        'w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-all',
-                        active ? 'border-blue-600 bg-blue-600 text-white scale-110 pulse-ring'
-                          : done ? 'border-blue-600 bg-blue-600 text-white'
-                            : 'border-gray-300 bg-white text-gray-400'
-                      )}>
-                        {done ? <CheckCircle2 size={14} /> : i + 1}
+              {/* Stage steps */}
+              <div className="flex items-center gap-0 mb-5 overflow-x-auto">
+                {STATUS_STEPS.map((step, i) => {
+                  const done = i < currentStep
+                  const active = i === currentStep
+                  return (
+                    <div key={step} className="flex items-center flex-shrink-0">
+                      <div className="flex flex-col items-center gap-1">
+                        <div className={cn(
+                          'w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-all',
+                          active ? 'border-blue-600 bg-blue-600 text-white scale-110 pulse-ring'
+                            : done ? 'border-blue-600 bg-blue-600 text-white'
+                              : 'border-gray-300 bg-white text-gray-400'
+                        )}>
+                          {done ? <CheckCircle2 size={14} /> : i + 1}
+                        </div>
+                        <span className={cn('text-xs font-medium capitalize hidden sm:block', active ? 'text-blue-700' : done ? 'text-blue-600' : 'text-gray-400')}>
+                          {step}
+                        </span>
                       </div>
-                      <span className={cn('text-xs font-medium capitalize hidden sm:block', active ? 'text-blue-700' : done ? 'text-blue-600' : 'text-gray-400')}>
-                        {step}
-                      </span>
+                      {i < STATUS_STEPS.length - 1 && (
+                        <div className={cn('w-10 sm:w-16 h-0.5 mx-1 flex-shrink-0', i < currentStep ? 'bg-blue-600' : 'bg-gray-200')} />
+                      )}
                     </div>
-                    {i < STATUS_STEPS.length - 1 && (
-                      <div className={cn('w-10 sm:w-16 h-0.5 mx-1 flex-shrink-0', i < currentStep ? 'bg-blue-600' : 'bg-gray-200')} />
-                    )}
-                  </div>
-                )
-              })}
-            </div>
+                  )
+                })}
+              </div>
 
-            {/* Progress */}
-            <div>
-              <div className="flex justify-between text-xs mb-1.5" style={{ color: 'var(--text-muted)' }}>
-                <span>Documents submitted</span>
-                <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{pbcDone}/{pbcItems.length}</span>
-              </div>
-              <div className="w-full h-2.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
-                <div className="h-full rounded-full transition-all duration-1000"
-                  style={{ width: `${pbcPct}%`, background: pbcPct === 100 ? '#10b981' : 'var(--brand-500)' }} />
-              </div>
+              {/* Progress */}
+              {pbcItems.length > 0 && (
+                <div>
+                  <div className="flex justify-between text-xs mb-1.5" style={{ color: 'var(--text-muted)' }}>
+                    <span>Documents submitted</span>
+                    <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{pbcDone}/{pbcItems.length}</span>
+                  </div>
+                  <div className="w-full h-2.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+                    <div className="h-full rounded-full transition-all duration-1000"
+                      style={{ width: `${pbcPct}%`, background: pbcPct === 100 ? '#10b981' : 'var(--brand-500)' }} />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        </div>
+        )}
 
         {/* Quick stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
           {[
-            { icon: FileText, label: 'Docs Submitted', value: `${pbcDone}/${pbcItems.length}`, color: '#2563eb', bg: '#eff6ff', href: '/client-portal/requests' },
+            { icon: FileText, label: 'Docs Submitted', value: pbcItems.length > 0 ? `${pbcDone}/${pbcItems.length}` : '—', color: '#2563eb', bg: '#eff6ff', href: '/client-portal/requests' },
             { icon: MessageSquare, label: 'Unread Messages', value: unreadMsgs, color: '#7c3aed', bg: '#f5f3ff', href: '/client-portal/messages' },
             { icon: CreditCard, label: 'Outstanding', value: formatCurrency(invoices.filter(i => i.status === 'sent' || i.status === 'overdue').reduce((s, i) => s + i.total_amount, 0)), color: '#d97706', bg: '#fffbeb', href: '/client-portal/invoices' },
-            { icon: TrendingUp, label: 'Audit Progress', value: `${engagement.progress}%`, color: '#059669', bg: '#ecfdf5', href: '/client-portal' },
+            { icon: TrendingUp, label: 'Audit Progress', value: engagement ? `${engagement.progress}%` : '—', color: '#059669', bg: '#ecfdf5', href: '/client-portal' },
           ].map((s, i) => (
             <Link key={s.label} href={s.href}
               className="stat-card float-card flex flex-col gap-2 cursor-pointer animate-fade-in"
@@ -167,24 +210,26 @@ export default function ClientPortalPage() {
               <Link href="/client-portal/requests" className="text-xs font-semibold" style={{ color: 'var(--brand-600)' }}>View all →</Link>
             </div>
             <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
-              {pbcItems.map(item => (
-                <div key={item.id} className={cn('flex items-center gap-4 px-5 py-4 transition-colors', !item.done && 'hover:bg-blue-50/30')}>
+              {pbcItems.length === 0 ? (
+                <div className="px-5 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No document requests yet</div>
+              ) : pbcItems.map(item => (
+                <div key={item.id} className={cn('flex items-center gap-4 px-5 py-4 transition-colors', !item.is_completed && 'hover:bg-blue-50/30')}>
                   <div className={cn('w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0',
-                    item.done ? 'bg-emerald-100' : 'border-2 border-gray-300')}>
-                    {item.done && <CheckCircle2 size={15} className="text-emerald-600" />}
+                    item.is_completed ? 'bg-emerald-100' : 'border-2 border-gray-300')}>
+                    {item.is_completed && <CheckCircle2 size={15} className="text-emerald-600" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className={cn('text-sm', item.done ? 'line-through' : 'font-medium')}
-                      style={{ color: item.done ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                    <p className={cn('text-sm', item.is_completed ? 'line-through' : 'font-medium')}
+                      style={{ color: item.is_completed ? 'var(--text-muted)' : 'var(--text-primary)' }}>
                       {item.title}
                     </p>
                     <p className="text-xs mt-0.5" style={{
-                      color: !item.done && new Date(item.due) < new Date() ? '#dc2626' : 'var(--text-muted)'
+                      color: !item.is_completed && item.due_date && new Date(item.due_date) < new Date() ? '#dc2626' : 'var(--text-muted)'
                     }}>
-                      Due: {formatDate(item.due)}
+                      Due: {formatDate(item.due_date)}
                     </p>
                   </div>
-                  {item.done
+                  {item.is_completed
                     ? <button className="p-1.5 rounded-lg hover:bg-gray-100"><Download size={14} style={{ color: 'var(--text-muted)' }} /></button>
                     : <button className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
                         style={{ background: 'var(--brand-50)', color: 'var(--brand-600)' }}>
@@ -208,10 +253,12 @@ export default function ClientPortalPage() {
                 )}
               </div>
               <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
-                {msgs.slice(-2).map((msg, i) => (
-                  <div key={msg.id} className={cn('px-5 py-3.5', !msg.read && msg.sender_role === 'auditor' && 'bg-blue-50/50')}>
+                {msgs.length === 0 ? (
+                  <div className="px-5 py-6 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No messages yet</div>
+                ) : msgs.slice(-2).map(msg => (
+                  <div key={msg.id} className={cn('px-5 py-3.5', !msg.is_read && msg.sender_role === 'auditor' && 'bg-blue-50/50')}>
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{msg.sender}</span>
+                      <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{msg.sender_name || 'Unknown'}</span>
                       <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
                         {new Date(msg.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
                       </span>

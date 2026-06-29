@@ -1,25 +1,41 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { Bell, Search, Plus, X, ExternalLink } from 'lucide-react'
+import { Bell, Search, Plus, X } from 'lucide-react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { NOTIFICATIONS } from '@/lib/data'
-import { formatRelativeTime, cn } from '@/utils'
+import { formatRelativeTime, cn, getInitials } from '@/utils'
+import { useAuth } from '@/lib/auth-context'
+import { fetchNotifications, markNotificationRead, markAllNotificationsRead } from '@/lib/db'
+import type { Notification } from '@/lib/supabase'
 
 interface Props { title: string; subtitle?: string; action?: { label: string; onClick: () => void } }
 
 const typeIcons: Record<string, string> = {
   document_uploaded: '📄', message_received: '💬',
   invoice_overdue: '⚠️', deadline_approaching: '⏰',
+  invoice_sent: '🧾', invoice_paid: '✅',
 }
 
 export default function DashboardHeader({ title, subtitle, action }: Props) {
-  const router = useRouter()
   const [notifOpen, setNotifOpen] = useState(false)
-  const [notifs, setNotifs] = useState(NOTIFICATIONS)
+  const [notifs, setNotifs] = useState<Notification[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const notifRef = useRef<HTMLDivElement>(null)
-  const unread = notifs.filter(n => !n.read).length
+  const { profile } = useAuth()
+  const unread = notifs.filter(n => !n.is_read).length
+
+  useEffect(() => {
+    let mounted = true
+    if (!profile?.id) return
+    ;(async () => {
+      try {
+        const n = await fetchNotifications(profile.id)
+        if (mounted) setNotifs(n)
+      } catch (err) {
+        console.error('Notifications load failed:', err)
+      }
+    })()
+    return () => { mounted = false }
+  }, [profile?.id])
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -29,8 +45,16 @@ export default function DashboardHeader({ title, subtitle, action }: Props) {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const markAllRead = () => setNotifs(n => n.map(x => ({ ...x, read: true })))
-  const markRead = (id: string) => setNotifs(n => n.map(x => x.id === id ? { ...x, read: true } : x))
+  const handleMarkAllRead = async () => {
+    if (!profile?.id) return
+    setNotifs(n => n.map(x => ({ ...x, is_read: true })))
+    try { await markAllNotificationsRead(profile.id) } catch (err) { console.error(err) }
+  }
+
+  const handleMarkRead = async (id: string) => {
+    setNotifs(n => n.map(x => x.id === id ? { ...x, is_read: true } : x))
+    try { await markNotificationRead(id) } catch (err) { console.error(err) }
+  }
 
   return (
     <header className="h-16 border-b flex items-center justify-between px-6 flex-shrink-0 bg-white sticky top-0 z-10"
@@ -67,7 +91,7 @@ export default function DashboardHeader({ title, subtitle, action }: Props) {
               <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
                 <span className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>Notifications</span>
                 <div className="flex items-center gap-2">
-                  {unread > 0 && <button onClick={markAllRead} className="text-xs font-medium" style={{ color: 'var(--brand-600)' }}>Mark all read</button>}
+                  {unread > 0 && <button onClick={handleMarkAllRead} className="text-xs font-medium" style={{ color: 'var(--brand-600)' }}>Mark all read</button>}
                   <button onClick={() => setNotifOpen(false)} className="p-1 rounded hover:bg-gray-100"><X size={13} /></button>
                 </div>
               </div>
@@ -75,16 +99,16 @@ export default function DashboardHeader({ title, subtitle, action }: Props) {
                 {notifs.length === 0 ? (
                   <div className="px-4 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No notifications</div>
                 ) : notifs.map(n => (
-                  <Link key={n.id} href={n.link}
-                    onClick={() => { markRead(n.id); setNotifOpen(false) }}
-                    className={cn('flex items-start gap-3 px-4 py-3 transition-colors hover:bg-gray-50 block', !n.read && 'bg-blue-50/60')}>
+                  <Link key={n.id} href={n.link || '#'}
+                    onClick={() => { handleMarkRead(n.id); setNotifOpen(false) }}
+                    className={cn('flex items-start gap-3 px-4 py-3 transition-colors hover:bg-gray-50 block', !n.is_read && 'bg-blue-50/60')}>
                     <span className="text-lg flex-shrink-0 mt-0.5">{typeIcons[n.type] || '🔔'}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{n.title}</p>
                       <p className="text-xs mt-0.5 leading-snug" style={{ color: 'var(--text-secondary)' }}>{n.message}</p>
                       <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{formatRelativeTime(n.created_at)}</p>
                     </div>
-                    {!n.read && <span className="w-2 h-2 rounded-full flex-shrink-0 mt-1" style={{ background: 'var(--brand-500)' }} />}
+                    {!n.is_read && <span className="w-2 h-2 rounded-full flex-shrink-0 mt-1" style={{ background: 'var(--brand-500)' }} />}
                   </Link>
                 ))}
               </div>
@@ -93,7 +117,9 @@ export default function DashboardHeader({ title, subtitle, action }: Props) {
         </div>
 
         {/* Avatar */}
-        <div className="w-9 h-9 rounded-full gradient-brand flex items-center justify-center text-white text-sm font-bold cursor-pointer hover:shadow-md transition-shadow">BO</div>
+        <div className="w-9 h-9 rounded-full gradient-brand flex items-center justify-center text-white text-sm font-bold cursor-pointer hover:shadow-md transition-shadow">
+          {profile ? getInitials(profile.full_name) : 'BO'}
+        </div>
 
         {action && (
           <button onClick={action.onClick} className="btn-primary h-9 text-sm">
