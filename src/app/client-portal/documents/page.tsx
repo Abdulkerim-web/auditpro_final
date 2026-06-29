@@ -65,7 +65,7 @@ export default function ClientDocumentsPage() {
           ) : (
             <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
               {docs.map(doc => {
-                const Icon = fileIcons[doc.file_type] || FileText
+                const Icon = fileIcons[doc.file_type || ''] || FileText
                 return (
                   <div key={doc.id} className="flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors">
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)' }}>
