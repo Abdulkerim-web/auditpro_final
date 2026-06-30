@@ -2,7 +2,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Scale, Eye, EyeOff, Lock, Mail, CircleAlert as AlertCircle, Shield, CircleCheck as CheckCircle } from 'lucide-react'
+import { Scale, Eye, EyeOff, Lock, Mail, User, CircleAlert as AlertCircle, Shield, CircleCheck as CheckCircle } from 'lucide-react'
 import { FIRM } from '@/lib/data'
 import { supabase } from '@/lib/supabase'
 import { fetchProfile } from '@/lib/db'
@@ -14,19 +14,22 @@ const DEMO_CREDS = [
   { label: 'Client demo', email: 'client@ethiotrading.et', password: 'client2024', role: 'client' },
 ]
 
-function LoginForm() {
+function AuthForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirect = searchParams.get('redirect')
+  const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [fullName, setFullName] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true); setError('')
+    setLoading(true); setError(''); setInfo('')
     const { data, error: signInError } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
@@ -35,7 +38,6 @@ function LoginForm() {
       setError('Invalid email or password. Try a demo account below.')
       setLoading(false); return
     }
-    // Fetch profile to determine role-based redirect
     try {
       const profile = await fetchProfile(data.user.id)
       const role = profile?.role || 'client'
@@ -46,7 +48,32 @@ function LoginForm() {
     }
   }
 
-  const fillDemo = (email: string, pw: string) => { setEmail(email); setPassword(pw); setError('') }
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true); setError(''); setInfo('')
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters.')
+      setLoading(false); return
+    }
+    const { data, error: signUpError } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: { data: { full_name: fullName.trim() || undefined } },
+    })
+    if (signUpError) {
+      setError(signUpError.message)
+      setLoading(false); return
+    }
+    if (!data.user) {
+      setError('Sign up failed. Please try again.')
+      setLoading(false); return
+    }
+    setInfo('Account created! Redirecting to your portal...')
+    const dest = redirect || '/client-portal'
+    router.push(dest)
+  }
+
+  const fillDemo = (email: string, pw: string) => { setEmail(email); setPassword(pw); setError(''); setInfo('') }
 
   return (
     <div className="min-h-screen flex">
@@ -97,8 +124,34 @@ function LoginForm() {
 
           <div className="card p-8">
             <div className="mb-7">
-              <h1 className="text-2xl font-extrabold mb-1" style={{ color: 'var(--text-primary)' }}>Welcome back</h1>
-              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Sign in to your {FIRM.name} account</p>
+              <h1 className="text-2xl font-extrabold mb-1" style={{ color: 'var(--text-primary)' }}>
+                {mode === 'login' ? 'Welcome back' : 'Create account'}
+              </h1>
+              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                {mode === 'login' ? `Sign in to your ${FIRM.name} account` : `Join ${FIRM.name} as a client`}
+              </p>
+            </div>
+
+            {/* Mode toggle */}
+            <div className="flex p-1 mb-6 rounded-xl" style={{ background: 'var(--surface-2)' }}>
+              <button
+                type="button"
+                onClick={() => { setMode('login'); setError(''); setInfo('') }}
+                className={cn('flex-1 py-2 text-sm font-semibold rounded-lg transition-all',
+                  mode === 'login' ? 'bg-white shadow-sm' : 'text-[var(--text-muted)]')}
+                style={mode === 'login' ? { color: 'var(--text-primary)' } : {}}
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMode('signup'); setError(''); setInfo('') }}
+                className={cn('flex-1 py-2 text-sm font-semibold rounded-lg transition-all',
+                  mode === 'signup' ? 'bg-white shadow-sm' : 'text-[var(--text-muted)]')}
+                style={mode === 'signup' ? { color: 'var(--text-primary)' } : {}}
+              >
+                Sign up
+              </button>
             </div>
 
             {error && (
@@ -108,7 +161,23 @@ function LoginForm() {
               </div>
             )}
 
-            <form onSubmit={handleLogin} className="flex flex-col gap-4">
+            {info && (
+              <div className="flex items-start gap-3 p-4 rounded-xl mb-5 text-sm animate-scale-in"
+                style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#16a34a' }}>
+                <CheckCircle size={16} className="flex-shrink-0 mt-0.5" />{info}
+              </div>
+            )}
+
+            <form onSubmit={mode === 'login' ? handleLogin : handleSignup} className="flex flex-col gap-4">
+              {mode === 'signup' && (
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Full name</label>
+                  <div className="relative">
+                    <User size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+                    <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} className="input-field pl-10" placeholder="Abebe Girma" required />
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Email address</label>
                 <div className="relative">
@@ -125,36 +194,40 @@ function LoginForm() {
                     {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
                   </button>
                 </div>
-                <div className="text-right mt-1.5">
-                  <Link href="/auth/forgot-password" className="text-xs hover:underline" style={{ color: 'var(--brand-600)' }}>Forgot password?</Link>
-                </div>
+                {mode === 'login' && (
+                  <div className="text-right mt-1.5">
+                    <Link href="/auth/forgot-password" className="text-xs hover:underline" style={{ color: 'var(--brand-600)' }}>Forgot password?</Link>
+                  </div>
+                )}
               </div>
               <button type="submit" disabled={loading} className="btn-primary py-3 mt-1 font-semibold disabled:opacity-60 w-full">
-                {loading ? <span className="flex items-center gap-2 justify-center"><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Signing in...</span> : 'Sign in'}
+                {loading ? <span className="flex items-center gap-2 justify-center"><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{mode === 'login' ? 'Signing in...' : 'Creating account...'}</span> : mode === 'login' ? 'Sign in' : 'Create account'}
               </button>
             </form>
 
-            {/* Demo accounts */}
-            <div className="mt-6 pt-5 border-t" style={{ borderColor: 'var(--border)' }}>
-              <p className="text-xs font-semibold mb-3 uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Demo accounts</p>
-              <div className="flex flex-col gap-2">
-                {DEMO_CREDS.map(d => (
-                  <button key={d.email} onClick={() => fillDemo(d.email, d.password)}
-                    className={cn('flex items-center gap-3 p-3 rounded-xl border text-left transition-all hover:border-blue-300 hover:bg-blue-50',
-                      email === d.email ? 'border-blue-400 bg-blue-50' : '')}
-                    style={{ borderColor: 'var(--border)' }}>
-                    <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0', d.role === 'auditor' ? 'gradient-brand' : d.role === 'admin' ? 'bg-gray-900' : 'bg-amber-500')}>
-                      {d.role === 'auditor' ? 'BO' : d.role === 'admin' ? 'AD' : 'AG'}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{d.label}</div>
-                      <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{d.email}</div>
-                    </div>
-                    {email === d.email && <CheckCircle size={15} className="text-blue-600 ml-auto flex-shrink-0" />}
-                  </button>
-                ))}
+            {/* Demo accounts — only on login mode */}
+            {mode === 'login' && (
+              <div className="mt-6 pt-5 border-t" style={{ borderColor: 'var(--border)' }}>
+                <p className="text-xs font-semibold mb-3 uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Demo accounts</p>
+                <div className="flex flex-col gap-2">
+                  {DEMO_CREDS.map(d => (
+                    <button key={d.email} onClick={() => fillDemo(d.email, d.password)}
+                      className={cn('flex items-center gap-3 p-3 rounded-xl border text-left transition-all hover:border-blue-300 hover:bg-blue-50',
+                        email === d.email ? 'border-blue-400 bg-blue-50' : '')}
+                      style={{ borderColor: 'var(--border)' }}>
+                      <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0', d.role === 'auditor' ? 'gradient-brand' : d.role === 'admin' ? 'bg-gray-900' : 'bg-amber-500')}>
+                        {d.role === 'auditor' ? 'BO' : d.role === 'admin' ? 'AD' : 'AG'}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{d.label}</div>
+                        <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{d.email}</div>
+                      </div>
+                      {email === d.email && <CheckCircle size={15} className="text-blue-600 ml-auto flex-shrink-0" />}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           <div className="mt-5 flex items-center justify-center gap-2 text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -167,5 +240,5 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
-  return <Suspense><LoginForm /></Suspense>
+  return <Suspense><AuthForm /></Suspense>
 }
