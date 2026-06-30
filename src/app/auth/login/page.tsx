@@ -9,6 +9,7 @@ import { fetchProfile } from '@/lib/db'
 import { cn } from '@/utils'
 
 const DEMO_CREDS = [
+  { label: 'Admin', email: 'admin@beyanomer.et', password: 'admin2024', role: 'admin' },
   { label: 'Auditor (you)', email: 'beyan@beyanomer.et', password: 'audit2024', role: 'auditor' },
   { label: 'Client demo', email: 'client@ethiotrading.et', password: 'client2024', role: 'client' },
 ]
@@ -142,8 +143,8 @@ function LoginForm() {
                     className={cn('flex items-center gap-3 p-3 rounded-xl border text-left transition-all hover:border-blue-300 hover:bg-blue-50',
                       email === d.email ? 'border-blue-400 bg-blue-50' : '')}
                     style={{ borderColor: 'var(--border)' }}>
-                    <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0', d.role === 'auditor' ? 'gradient-brand' : 'bg-amber-500')}>
-                      {d.role === 'auditor' ? 'BO' : 'AG'}
+                    <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0', d.role === 'auditor' ? 'gradient-brand' : d.role === 'admin' ? 'bg-gray-900' : 'bg-amber-500')}>
+                      {d.role === 'auditor' ? 'BO' : d.role === 'admin' ? 'AD' : 'AG'}
                     </div>
                     <div className="min-w-0">
                       <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{d.label}</div>
