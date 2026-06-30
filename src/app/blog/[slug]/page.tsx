@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { useParams } from 'next/navigation'
 import PublicNav from '@/components/public/PublicNav'
 import PublicFooter from '@/components/public/PublicFooter'
 import Link from 'next/link'
@@ -7,7 +8,9 @@ import { ArrowLeft, Calendar, Tag } from 'lucide-react'
 import { fetchBlogPost, fetchBlogPosts } from '@/lib/db'
 import type { BlogPost } from '@/lib/supabase'
 
-export default function BlogPostPage({ params }: { params: { slug: string } }) {
+export default function BlogPostPage() {
+  const params = useParams<{ slug: string }>()
+  const slug = params.slug
   const [loading, setLoading] = useState(true)
   const [post, setPost] = useState<BlogPost | null>(null)
   const [related, setRelated] = useState<BlogPost[]>([])
@@ -16,7 +19,7 @@ export default function BlogPostPage({ params }: { params: { slug: string } }) {
     let mounted = true
     ;(async () => {
       try {
-        const p = await fetchBlogPost(params.slug)
+        const p = await fetchBlogPost(slug)
         if (!mounted) return
         setPost(p)
         if (p) {
@@ -33,7 +36,7 @@ export default function BlogPostPage({ params }: { params: { slug: string } }) {
       }
     })()
     return () => { mounted = false }
-  }, [params.slug])
+  }, [slug])
 
   if (loading) {
     return (

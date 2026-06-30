@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, CircleCheck as CheckCircle2, Circle, FileText, Download } from 'lucide-react'
 import DashboardHeader from '@/components/dashboard/DashboardHeader'
@@ -9,7 +10,9 @@ import type { Engagement, Milestone, DocumentRow, PBCRequest, Message } from '@/
 
 const STATUS_STEPS = ['planning', 'fieldwork', 'review', 'reporting', 'completed']
 
-export default function EngagementDetailPage({ params }: { params: { id: string } }) {
+export default function EngagementDetailPage() {
+  const params = useParams<{ id: string }>()
+  const id = params.id
   const [loading, setLoading] = useState(true)
   const [eng, setEng] = useState<Engagement | null>(null)
   const [milestones, setMilestones] = useState<Milestone[]>([])
@@ -22,11 +25,11 @@ export default function EngagementDetailPage({ params }: { params: { id: string 
     ;(async () => {
       try {
         const [e, m, d, p, msg] = await Promise.all([
-          fetchEngagement(params.id),
-          fetchMilestones(params.id),
-          fetchDocuments({ engagementId: params.id }),
-          fetchPBCRequests(params.id),
-          fetchMessagesByEngagement(params.id),
+          fetchEngagement(id),
+          fetchMilestones(id),
+          fetchDocuments({ engagementId: id }),
+          fetchPBCRequests(id),
+          fetchMessagesByEngagement(id),
         ])
         if (!mounted) return
         setEng(e)
@@ -41,7 +44,7 @@ export default function EngagementDetailPage({ params }: { params: { id: string 
       }
     })()
     return () => { mounted = false }
-  }, [params.id])
+  }, [id])
 
   if (loading) {
     return (

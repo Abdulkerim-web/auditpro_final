@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Phone, Mail, Building2, Calendar, FileText, Receipt, MessageSquare } from 'lucide-react'
 import DashboardHeader from '@/components/dashboard/DashboardHeader'
@@ -7,7 +8,9 @@ import { cn, STATUS_COLORS, INDUSTRY_LABELS, ENGAGEMENT_TYPE_LABELS, formatCurre
 import { fetchClient, fetchEngagements, fetchInvoices, fetchDocuments } from '@/lib/db'
 import type { Client, Engagement, Invoice, DocumentRow } from '@/lib/supabase'
 
-export default function ClientDetailPage({ params }: { params: { id: string } }) {
+export default function ClientDetailPage() {
+  const params = useParams<{ id: string }>()
+  const id = params.id
   const [loading, setLoading] = useState(true)
   const [client, setClient] = useState<Client | null>(null)
   const [engagements, setEngagements] = useState<Engagement[]>([])
@@ -19,10 +22,10 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
     ;(async () => {
       try {
         const [c, e, i, d] = await Promise.all([
-          fetchClient(params.id),
-          fetchEngagements({ clientId: params.id }),
-          fetchInvoices({ clientId: params.id }),
-          fetchDocuments({ clientId: params.id }),
+          fetchClient(id),
+          fetchEngagements({ clientId: id }),
+          fetchInvoices({ clientId: id }),
+          fetchDocuments({ clientId: id }),
         ])
         if (!mounted) return
         setClient(c)
@@ -36,7 +39,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       }
     })()
     return () => { mounted = false }
-  }, [params.id])
+  }, [id])
 
   if (loading) {
     return (
